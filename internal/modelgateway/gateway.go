@@ -83,9 +83,12 @@ type Config struct {
 	// source exists, scanning is unavailable, and the gateway says so at
 	// startup. With a provider wired, responses are scanned by InboundEngine
 	// whenever the policy carries an inbound BLOCK rule, and every failure
-	// to scan blocks. InboundAudit receives one entry per block (nil = log
-	// only). InboundHoldLimit (bytes) and InboundScanTimeout take the
-	// Default* constants when zero.
+	// to scan blocks. When the provider answers "not configured", responses
+	// are instead scanned log-only against the baseline rules, never held
+	// (inbound_baseline.go). InboundAudit receives one entry per block or
+	// baseline detection (nil = log only). InboundHoldLimit (bytes; also
+	// the baseline's scan buffer) and InboundScanTimeout take the Default*
+	// constants when zero.
 	InboundPolicy      guardrailpolicy.PolicyProvider
 	InboundEngine      guardrail.Engine
 	InboundAudit       InboundAuditSink
@@ -380,6 +383,11 @@ func (g *Gateway) handleModel(w http.ResponseWriter, r *http.Request) {
 		writeInboundBlock(w, http.StatusServiceUnavailable, dec)
 		return
 	}
+	// No admin policy: the baseline scan, log-only and never held (#2736).
+	var bl *baselineRequest
+	if inMode.baseline {
+		bl = &baselineRequest{in: g.inbound, sub: inSub}
+	}
 	var ir *inboundRequest
 	if inMode.scan {
 		ir = &inboundRequest{in: g.inbound, mode: inMode, sub: inSub}
@@ -470,6 +478,11 @@ func (g *Gateway) handleModel(w http.ResponseWriter, r *http.Request) {
 			req.Header.Del("Accept-Encoding")
 		},
 		ModifyResponse: func(resp *http.Response) error {
+			// Baseline (#2736): tee the final body, whatever the steps below
+			// make of it, and scan it once the proxy has written it all.
+			if bl != nil {
+				defer bl.watch(resp)
+			}
 			// Scanned mode (#2367): hold the whole response here, scan it,
 			// and either block (typed error via ErrorHandler, nothing
 			// committed to the client yet) or restore the held bytes for the
@@ -593,8 +606,13 @@ func (g *Gateway) handleModel(w http.ResponseWriter, r *http.Request) {
 }
 
 // statusWriter wraps http.ResponseWriter to capture the response status code for
-// the END lifecycle log while preserving http.Flusher, so streamed (SSE)
-// responses still flush each chunk promptly.
+// the END lifecycle log. It deliberately does NOT implement http.Flusher:
+// httputil.ReverseProxy flushes through http.NewResponseController, which
+// checks for a Flusher before it follows Unwrap, so a Flush method here would
+// shadow Unwrap and silently no-op whenever this writer sits above another
+// wrapper (the #2773 class of bug — SSE token streams buffer until the
+// upstream closes). Unwrap alone lets the controller reach the real Flusher
+// however many wrappers sit in between.
 type statusWriter struct {
 	http.ResponseWriter
 	status int
@@ -614,11 +632,9 @@ func (s *statusWriter) Write(b []byte) (int, error) {
 	return s.ResponseWriter.Write(b)
 }
 
-func (s *statusWriter) Flush() {
-	if f, ok := s.ResponseWriter.(http.Flusher); ok {
-		f.Flush()
-	}
-}
+// Unwrap lets http.NewResponseController reach the underlying writer's
+// Flusher, Hijacker and deadline setters.
+func (s *statusWriter) Unwrap() http.ResponseWriter { return s.ResponseWriter }
 
 func contains(s []string, v string) bool {
 	for _, x := range s {

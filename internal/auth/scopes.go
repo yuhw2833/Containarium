@@ -67,6 +67,15 @@ const (
 	ScopeSecurityRead  = "security:read"
 	ScopeSecurityWrite = "security:write"
 
+	// security:trigger-for-owner — carried by a service credential (the
+	// managed control plane's driver token) that has ALREADY authorized the
+	// end user as the box's owner and starts the in-box malware scan on
+	// that owner's behalf (#2655). It is the only way a non-owner token
+	// passes RequireContainerOwner. It is matched literally: neither the
+	// wildcard scope nor an unscoped admin token carries it, so an operator
+	// token cannot start a scan of a customer's box.
+	ScopeSecurityTriggerForOwner = "security:trigger-for-owner"
+
 	// alerting rules + webhook config
 	ScopeAlertsRead  = "alerts:read"
 	ScopeAlertsWrite = "alerts:write"
@@ -116,6 +125,12 @@ const (
 	// (claim, kill switch, bans, list).
 	ScopeAnonDoor  = "anon:door"
 	ScopeAnonAdmin = "anon:admin"
+
+	// ssh:authorize is what a sentinel-signed SSHAuthzService.Authorize
+	// call carries (#2516): the gateway stamps it after verifying the
+	// sentinel signature on /v1/ssh/authorize, the only way that route is
+	// reached. It grants that one query and nothing else.
+	ScopeSSHAuthorize = "ssh:authorize"
 
 	// managed Kubernetes clusters (ClusterServer, #1413).
 	// clusters:read lists/inspects clusters and their scale history;
@@ -200,7 +215,7 @@ var AllScopes = []string{
 	ScopeBackupsRead, ScopeBackupsWrite,
 	ScopeVolumesRead, ScopeVolumesWrite,
 	ScopeRoutesRead, ScopeRoutesWrite,
-	ScopeSecurityRead, ScopeSecurityWrite,
+	ScopeSecurityRead, ScopeSecurityWrite, ScopeSecurityTriggerForOwner,
 	ScopeAlertsRead, ScopeAlertsWrite,
 	ScopeTrafficRead,
 	ScopeCodeWrite, ScopeSSHWrite,
@@ -208,6 +223,7 @@ var AllScopes = []string{
 	ScopeAgentsRead, ScopeAgentsRun, ScopeAgentsCall,
 	ScopeCrewsRead, ScopeCrewsRun,
 	ScopeAnonDoor, ScopeAnonAdmin,
+	ScopeSSHAuthorize,
 	ScopeClustersRead, ScopeClustersWrite, ScopeClustersScale,
 	ScopeAuditRead, ScopeNetworkPolicyRead, ScopeTokensRead,
 	ScopeAuditIngest,

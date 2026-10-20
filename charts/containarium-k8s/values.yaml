@@ -46,7 +46,13 @@ gateway:
     # kubernetes-plugin entrypoint), published per Containarium release by
     # sidecars.yml. The previously pinned ghcr.io/tg123/... path was never
     # published upstream and 403s on pull (#976).
-    image: ghcr.io/footprintai/containarium-sshpiper:latest-stable
+    repository: ghcr.io/footprintai/containarium-sshpiper
+    # -- Defaults to the chart appVersion when empty, so a released chart pins
+    # the gateway to its own release (#2703). The unstamped development chart
+    # falls back to the moving latest-stable tag.
+    tag: ""
+    # -- Full image reference override (repository and tag ignored when set).
+    image: ""
     # -- Secret holding sshpiperd's host key under the `server_key` field.
     # Create before enabling the gateway:
     #   ssh-keygen -t ed25519 -f host_key -N ""
@@ -67,7 +73,7 @@ gateway:
   #     --from-file=ssh-privatekey=./sshpiper_upstream
   # Then set upstreamPublicKey to the contents of ./sshpiper_upstream.pub and
   # upstreamKeySecret to the Secret name above. Leave both empty only if you
-  # have also cleared `namespace` to disable gateway routing entirely.
+  # disable the gateway with `enabled: false` and `namespace: ""`.
   upstreamPublicKey: ""
   upstreamKeySecret: ""
 
